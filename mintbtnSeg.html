@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=0.1">
+    <title>Boton WMint</title>
+    <style>
+        select {
+            background-color: #cebce6;
+            font-family: 'Smooth v2', sans-serif;
+            font-weight: bold;
+            font-size: 20px;
+        }
+
+        body {
+            background-color: rgb(227, 221, 235);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            height: 100vh;
+            font-size: 20px;
+            color: rgb(10, 10, 10);
+            overflow: hidden;
+        }
+
+        button {
+            background-color: rgb(169, 157, 184);
+            border: none;
+            padding: 10px 50px;
+            border-radius: 5px;
+            margin: 10px 0;
+            cursor: pointer;
+            color: rgb(8, 8, 8);
+            font-weight: 600;
+        }
+
+        #dialog-ctr {
+            margin-block: -200px 300px;
+        }
+
+        dialog {
+            box-shadow: 2px 1px 3px #0055,
+                1px 2px 3px #0055,
+                3px 3px 1px #0053,
+                -3px 3px 1px #0053;
+        }
+
+        progress {
+            cursor: progress;
+            height: 25px;
+            width: 20vmax;
+        }
+
+    </style>
+
+</head>
+
+<body>
+
+    <!--    Diálogo que se muestra al usuario....
+             ...El contenido se crea dinámicamente y
+             es mostrado automáticamnete por 4 seg.
+             
+             NOTA: "Reemplaza la alerta anteriormente usada,
+             de esta forma la `EXPERIENCIA DEL USUARIO
+             ES MAS FLUIDA Y AGRADABLE.`"
+        -->
+    <div id="dialog-ctr"></div>
+
+    <div id="proggres-ctr" hidden>
+        <h5 id="prog-bar-title"></h5>
+        <!--
+            Barra de progreso que muestra la cantidad de NFT's
+            disponibles.
+            Inicialmente no es mostrado, ya que utiliza la API
+            de DOM 'LocalStorage' y, para evitar "bugs" se debe
+            verificar que es compatible por el browser visitante
+            y se encuentra disponible
+        -->
+        <progress max="3000.0" id="progress-bar"></progress>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.5.4/socket.io.js"
+        integrity="sha512-YeeA/Qxn5hYdkukScTCNNOhTrv1C2RubAGButJ1rmgQwZf/HdRaCGl+JAVkqsqaNRaYNHdheiuKKuPf9mDcqKg=="
+        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script async="false">
+        const pbTitle = document.getElementById("prog-bar-title");
+        const progress = document.getElementById("progress-bar");
+        progress.parentElement.style.display = "none";
+
+
+        /* ****** DO NOT MODIFY!!! ****** */
+        /* SOCKET CONNECTION USED TO PERSIST
+          THE NUMBER OF TOKENS AVAILABLE */
+        const socket = window.io("https://danielc.cibera.mx/");
+        socket.on("connected", (data) => {
+            console.log("Socket client connected");
+
+            const { room } = data;
+
+            if (room && room === "camilogsv2") {
+                socket.emit("room-match", { roomMatch: room });
+            }
+            else {
+                socket.emit("goodbye", { reason: "Room name not match" });
+                socket.disconnect(true);
+            }
+
+            socket.on("forgiven", (data) => {
+                console.log("error on connecion, reason:", data.message);
+                if (!data.success) {
+                    socket.emit("goodbye", []);
+                    socket.disconnect(true);
+                }
+            });
+
+            socket.emit("get-tokens", { model: "CamilogsV2" });
+
+            socket.on("message", (data) => {
+                let { tokens } = data;
+                tokens = Number(tokens);
+
+                pbTitle.textContent = `${tokens} tokens left available`;
+                pbTitle.style.fontSize = "16px";
+                pbTitle.style.marginBlock = "0";
+                pbTitle.style.textAlign = "center";
+                progress.value = tokens;
+            });
+            window["socket"] = socket;
+        });
+    </script>
+
+    <nav>
+        <button id="signin"></button>
+    </nav>
+
+    <span id="container" style="text-align: center;">
+
+        <div>
+            <p>Wallet Address: <span id="walletAddress"></span></p>
+        </div>
+
+        <div>
+            <label for="amount">Select Amount</label>
+            <input type="number" id="amount" name="amount" min="1" required>
+
+        </div>
+        <button id="WMint">WMint</button>
+        <div>
+            <p>
+                Price: <span id="price">0.00</span>
+            </p>
+        </div>
+    </span>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"
+        integrity="sha512-E8QSvWZ0eCLGk4km3hxSsNmGWbLtSCSUcewDQPQWZF6pEU8GlT8a5fF32wOl1i8ftdMhssTrF/OhyGWwonTcXA=="
+        crossorigin="anonymous" referrerpolicy="no-referrer">
+        </script>
+    <script src="https://cdn.jsdelivr.net/npm/merkletreejs@latest/merkletree.js">
+        
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/keccak256@latest/keccak256.js"></script>
+    <script type="module">
+        import { ethers } from "https://cdnjs.cloudflare.com/ajax/libs/ethers/5.4.3/ethers.esm.min.js";
+        const keccak256 = window.keccak256
+        if (window["ethers"] === undefined) {
+            window.ethers = ethers;
+        }
+        const progress = document.getElementById("progress-bar");
+        const pb_Title = document.getElementById("prog-bar-title");
+        const dialogCtr = document.getElementById("dialog-ctr");
+        const center = document.createElement("center");
+        const dialogEl = document.createElement("dialog");
+
+        let lastNum, currentNum;
+        setInterval(() => {
+            window.socket.emit("get-tokens", { model: "CamilogsV2" });
+            window.socket.on("message", (data) => {
+                const tokens = Number(data.tokens);
+
+                lastNum = tokens;
+                if (!!currentNum && currentNum !== lastNum) {
+                    console.log("setTimeout 1", data, lastNum);
+                    pb_Title.textContent = `${data.tokens} tokens left available`;
+                    progress.value = data.tokens;
+                }
+            });
+
+        }, 3000)
+        let tree, leaves = [], whitelist;
+
+        
+        socket.emit("whitelist", {mssg: "please!"});
+        socket.on("here-you-have-the-wl", (data) => {
+            const {wl} = data;
+            whitelist = JSON.parse(JSON.stringify(wl));
+            
+            const leavesNodes = whitelist.map((holder) => {
+                leaves.push(holder.HolderAddress)
+                return holder.HolderAddress
+            });
+            const nodes = leavesNodes.map((addr) => keccak256(addr));
+            tree = new MerkleTree(nodes, keccak256, { sortPairs: true });
+        });
+
+        window.addEventListener("load", async (ev) => {
+
+            const contractAddress = "0xeb0977d478E874183D99d02f2BAE2508605D6Ad2";
+            const abi = [
+                {
+                    "inputs": [
+                        {
+                            "internalType": "uint256",
+                            "name": "quantity",
+                            "type": "uint256"
+                        },
+                        {
+                            "internalType": "bytes32[]",
+                            "name": "_merkleProof",
+                            "type": "bytes32[]"
+                        }
+                    ],
+                    "name": "WMint",
+                    "outputs": [],
+                    "stateMutability": "payable",
+                    "type": "function"
+                },
+                {
+                    "inputs": [
+                        {
+                            "internalType": "uint256",
+                            "name": "quantity",
+                            "type": "uint256"
+                        }
+                    ],
+                    "name": "mint",
+                    "outputs": [],
+                    "stateMutability": "payable",
+                    "type": "function"
+                },
+            ]
+
+            // Ethereum global object.
+            const ethereum = window.ethereum;
+
+            const dialog = (mssg) => {
+                const font = document.createElement("font");
+
+                if (font.textContent)
+                    font.textContent = "";
+                font.style.fontSize = "1.5rem";
+                font.style.color = "rgb(120,50,40)";
+                font.style.width = dialogEl.style.width;
+                font.textContent = mssg;
+
+                dialogEl.style.textAlign = "center";
+                dialogEl.style.paddingInline = "10px";
+                dialogEl.appendChild(font);
+                dialogEl.setAttribute("open", true);
+                center.appendChild(dialogEl);
+                dialogCtr.appendChild(center);
+
+                setTimeout(() => {
+                    dialogEl.removeAttribute("open");
+                    dialogEl.removeChild(font);
+                    center.removeChild(dialogEl);
+                }, 3000);
+            };
+
+            // Check if MetaMask or some provider is installed
+            if (!ethereum) {
+                dialog("MetaMask is not installed!");
+                return;
+            }
+            const isConnected = ethereum.isConnected();
+
+            // DOM elements 
+            const signinEl = document.querySelector("#signin");
+            const mintBtn = document.getElementById('WMint');
+            const amountEl = document.getElementById('amount');
+            const priceEl = document.getElementById('price');
+            const progressCtr = document.getElementById("proggres-ctr");
+            let account = null;
+            let isWhitelisted = false;
+            let maxAllowed = 4;
+
+
+            // Event listeners
+            signinEl.addEventListener("click", async () => await getAccount());
+            mintBtn.addEventListener("click", async () => await WMint());
+            amountEl.addEventListener("keydown", (ev) => {
+                amountEl.disabled = true;
+                setTimeout(() => {
+                    amountEl.disabled = false;
+                    amountEl.autofocus = true;
+                    ev.target.value = (1).toString(16);
+                }, 0)
+            });
+            amountEl.addEventListener("change", (ev) => {
+                ev.preventDefault();
+                const amount = ev.target.value;
+                const price = isWhitelisted ? 0 : (0.018 * amount).toFixed(3);
+                priceEl.textContent = price;
+            });
+
+            signinEl.textContent = "Sign into MetaMask";
+            signinEl.setAttribute("hidden", true)
+            progressCtr.style.display = "block";
+
+            if (!ethereum.selectedAddress) {
+                document.querySelector("#container").setAttribute("hidden", true);
+                progressCtr.style.display = "none";
+                signinEl.removeAttribute("hidden")
+                return
+            }
+
+            let contract, signerAddress;
+            const provider = new ethers.providers.Web3Provider(ethereum);
+            const signer = provider.getSigner();
+            contract = new ethers.Contract(contractAddress, abi, provider);
+            const contractWithSigner = contract.connect(signer);
+            signerAddress = await signer.getAddress();
+
+            async function getAccount() {
+                const accounts = await ethereum.request({ method: 'eth_requestAccounts' });
+
+                if (accounts.length !== 0) {
+                    account = accounts[0];
+                    signinEl.removeAttribute("disabled");
+                    location.reload();
+                }
+            }
+            document.getElementById('walletAddress').textContent = signerAddress;
+
+            ethereum.on("accountsChanged", (accounts) => {
+                window.location.reload();
+            })
+
+            let proofDta;
+            if (!account) {
+                setTimeout(() => {
+                    ethereum.request({ method: 'eth_accounts' })
+                        .then(async (acc) => {
+                            leaves.forEach((l) => {
+                                const originalL = l;
+                                l = l.toLowerCase();
+                                if (l.match(acc[0].toLowerCase())){
+                                    account = originalL;
+                                }
+                            });
+
+                            if (!account) account = acc[0];
+                            const getProof = tree.getHexProof(keccak256(account));
+
+                            if (!!getProof && getProof.length > 0) {
+                                const proof = tree.getProof(keccak256(account));
+                                const root = tree.getRoot();
+                                console.log("root", root.toString("hex"))
+                                const verified = tree.verify(proof, keccak256(account), root);
+                                proofDta = getProof;
+
+                                if (verified) {
+                                    const holder = whitelist.find((h) => h.HolderAddress === account);
+
+                                    if (holder) {
+                                        const address = holder.HolderAddress;
+                                        isWhitelisted = true;
+
+                                        dialog("Your wallet is whitelisted and verified successfully!");
+                                        console.log(`Address: ${address} was verified successfully`);
+
+                                        const NFT_Quantity = holder.Quantity;
+                                        maxAllowed = NFT_Quantity;
+                                        amountEl.setAttribute("max", NFT_Quantity);
+                                        amountEl.setAttribute("min", 1);
+                                        amountEl.setAttribute("value", (1).toString(16));
+                                    }
+                                } else {
+                                    amountEl.setAttribute("max", 4);
+                                    amountEl.setAttribute("min", 1);
+                                    amountEl.setAttribute("value", (1).toString(16));
+                                    priceEl.textContent = String(0.018)
+
+                                }
+                            }
+                            else {
+                                amountEl.setAttribute("max", 4);
+                                amountEl.setAttribute("min", 1);
+                                amountEl.setAttribute("value", (1).toString(16));
+                                priceEl.textContent = String(0.018)
+                            }
+                        });
+                }, 4000);
+            }
+
+            async function WMint() {
+                const amount = Number(amountEl.value);
+
+                if (amount === 0) {
+                    dialog("Please select a valid quantity!");
+                    return;
+                }
+                if (amount > maxAllowed) {
+                    dialog(`Quantity not allowed, your max quantity allowed is: ${maxAllowed}`);
+                    return;
+                }
+
+                let price = isWhitelisted ? 0 : 0.018;
+                const calc = price * amount;
+
+                try {
+                    mintBtn.disabled = true
+                    mintBtn.removeAttribute("style");
+                    mintBtn.textContent = 'Minting...'
+                    price = ethers.utils.parseEther(calc.toString(10));
+                    const gasLimit = 3000000;
+
+                    const txn = {
+                        from: signerAddress,
+                        value: price,
+                        gasLimit: isWhitelisted ? gasLimit : null,
+                    }
+                    if (isWhitelisted) {
+                        await contractWithSigner.WMint(amount,proofDta, txn);
+                    }
+                    else {
+                        await contractWithSigner.mint(amount, txn);
+                    }
+
+                    console.log("minted", amount)
+                    /* ****** DO NOT MODIFY!!! ****** */
+                    /* SOCKET CONNECTION USED TO PERSIST
+                    THE NUMBER OF TOKENS AVAILABLE */
+                    const socket = window.socket;
+                    const leftTokens = lastNum - amount;
+                    socket.emit("update-tokens", {
+                        model: "CamilogsV2",
+                        tokens: leftTokens
+                    });
+
+                    socket.on("updated", (data) => {
+                        const { tokens } = data;
+                        currentNum = Number(tokens);
+                        pb_Title.textContent = `${tokens} tokens left available`;
+                        progress.value = tokens;
+                    });
+                    /***********************************/
+
+                    dialog("Minted!");
+                    return;
+                }
+                catch (e) {
+                    console.table(e, ["value"]);
+                    if (e) {
+                        const message = e.message.split("(", 1)[0];
+                        dialog(message);
+                    }
+                }
+                finally {
+                    mintBtn.innerHTML = 'WMint'
+                    mintBtn.disabled = false
+                }
+            }
+
+            isConnected ? dialog("Connected") : null;
+            window.removeEventListener("load", (ev) => ev.preventDefault());
+        });
+
+    </script>
+</body>
+
+</html>
